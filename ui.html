@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: Inter, -apple-system, sans-serif;
+      font-size: 12px;
+      color: #333;
+      background: #fff;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      height: 100vh;
+    }
+
+    h2 { font-size: 14px; font-weight: 600; color: #111; }
+
+    .row { display: flex; align-items: center; gap: 8px; }
+
+    label { font-size: 11px; font-weight: 500; color: #666; white-space: nowrap; }
+
+    input[type="text"] {
+      flex: 1; padding: 6px 8px; border: 1px solid #ddd;
+      border-radius: 6px; font-size: 12px; outline: none;
+      transition: border-color 0.15s;
+    }
+    input[type="text"]:focus { border-color: #18a0fb; }
+
+    .btn {
+      padding: 7px 14px; border: none; border-radius: 6px;
+      font-size: 12px; font-weight: 500; cursor: pointer;
+      transition: opacity 0.15s; white-space: nowrap;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn-primary  { background: #18a0fb; color: #fff; }
+    .btn-copy     { background: #1bc47d; color: #fff; }
+
+    .hint { font-size: 10px; color: #999; }
+
+    .error {
+      background: #fff3f3; border: 1px solid #f5a0a0;
+      border-radius: 6px; padding: 8px 10px; color: #c00;
+      font-size: 11px; display: none; white-space: pre-wrap;
+    }
+
+    .actions { display: flex; gap: 8px; align-items: center; }
+
+    .copied { font-size: 10px; color: #1bc47d; display: none; }
+
+    /* ── Preview panel ── */
+    #preview {
+      flex: 1;
+      overflow-y: auto;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 12px 14px;
+      background: #fafafa;
+      font-size: 11px;
+      line-height: 1.55;
+      color: #888;
+    }
+    #preview.has-content { color: #222; background: #fff; }
+
+    #preview .header { margin-bottom: 12px; }
+    #preview .release-title { font-weight: 700; font-size: 12px; color: #111; }
+    #preview .release-date  { font-size: 11px; color: #555; margin-top: 2px; }
+
+    #preview .section-title {
+      font-weight: 700; font-size: 12px;
+      margin: 14px 0 8px;
+    }
+
+    #preview .task { padding: 8px 0; }
+    #preview .task-title {
+      font-weight: 600; font-size: 12px; color: #111; margin-bottom: 3px;
+    }
+    #preview .task-desc {
+      color: #444; font-size: 11px; margin-bottom: 6px;
+      white-space: pre-wrap;
+    }
+    #preview .task-links { display: flex; gap: 12px; }
+    #preview .task-links a {
+      color: #18a0fb; text-decoration: underline;
+      font-weight: 600; font-size: 11px;
+    }
+    #preview .task-links span { color: #999; font-size: 11px; }
+
+    #preview .divider {
+      border-top: 1px solid #e5e5e5;
+      margin: 8px 0;
+      font-size: 0;
+      color: transparent;
+    }
+  </style>
+</head>
+<body>
+  <h2>Changelog Generator</h2>
+
+  <div class="row">
+    <label>Library name</label>
+    <input type="text" id="library" value="UFC" placeholder="e.g. UFC" />
+  </div>
+
+  <div class="hint">Select a release frame in Figma, then click Generate.</div>
+
+  <div class="actions">
+    <button class="btn btn-primary" id="generateBtn">Generate</button>
+    <button class="btn btn-copy" id="copyBtn" style="display:none">Copy text</button>
+    <span class="copied" id="copiedLabel">Copied!</span>
+  </div>
+
+  <div class="error" id="errorBox"></div>
+
+  <div id="preview">Changelog will appear here…</div>
+
+  <script>
+    const generateBtn = document.getElementById('generateBtn');
+    const copyBtn     = document.getElementById('copyBtn');
+    const copiedLabel = document.getElementById('copiedLabel');
+    const preview     = document.getElementById('preview');
+    const errorBox    = document.getElementById('errorBox');
+    const libraryEl   = document.getElementById('library');
+
+    let plainText = '';
+
+    generateBtn.addEventListener('click', () => {
+      errorBox.style.display = 'none';
+      copyBtn.style.display  = 'none';
+      preview.classList.remove('has-content');
+      preview.textContent = 'Generating…';
+      parent.postMessage({ pluginMessage: { type: 'generate', library: libraryEl.value } }, '*');
+    });
+
+    copyBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText(plainText).then(() => {
+        copiedLabel.style.display = 'inline';
+        setTimeout(() => { copiedLabel.style.display = 'none'; }, 2000);
+      });
+    });
+
+    window.onmessage = (event) => {
+      const msg = event.data.pluginMessage;
+      if (!msg) return;
+
+      if (msg.type === 'result') {
+        plainText = msg.text;
+        preview.innerHTML = msg.html;
+        preview.classList.add('has-content');
+        copyBtn.style.display = 'inline-block';
+        errorBox.style.display = 'none';
+      } else if (msg.type === 'error') {
+        preview.textContent = '';
+        preview.classList.remove('has-content');
+        copyBtn.style.display = 'none';
+        errorBox.textContent = msg.message;
+        errorBox.style.display = 'block';
+      }
+    };
+  </script>
+</body>
+</html>
