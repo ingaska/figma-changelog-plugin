@@ -1,4 +1,4 @@
-figma.showUI(__html__, { width: 620, height: 580, title: 'Changelog Generator' });
+figma.showUI(__html__, { width: 620, height: 600, title: 'Changelog Generator' });
 
 figma.ui.onmessage = (msg) => {
   if (msg.type === 'generate') {
@@ -8,20 +8,25 @@ figma.ui.onmessage = (msg) => {
     } catch (e) {
       figma.ui.postMessage({ type: 'error', message: e.message });
     }
+
+  } else if (msg.type === 'generate-template') {
+    generateTemplate(msg.majorCount, msg.minorCount)
+      .then(() => figma.ui.postMessage({ type: 'template-done' }))
+      .catch(function(e) {
+        var msg = (e && e.message) ? e.message : (e ? String(e) : 'Unknown error');
+        console.error('[Changelog] Template error:', e);
+        figma.ui.postMessage({ type: 'error', message: msg });
+      });
+
   } else if (msg.type === 'close') {
     figma.closePlugin();
   }
 };
 
-// ─── Node helpers ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// READ HELPERS
+// ═══════════════════════════════════════════════════════════════════════════════
 
-// Find the first direct child with a given name
-function childByName(node, name) {
-  if (!('children' in node)) return null;
-  return node.children.find(c => c.name === name) || null;
-}
-
-// Find the first descendant (any depth) with a given name
 function descendantByName(node, name) {
   if (node.name === name) return node;
   if ('children' in node) {
@@ -33,13 +38,13 @@ function descendantByName(node, name) {
   return null;
 }
 
-// Find all descendant INSTANCE nodes named "Task"
-function findTaskInstances(node) {
+// Accept both original INSTANCE tasks and template-generated FRAME tasks
+function findTaskNodes(node) {
   const results = [];
   function walk(n) {
-    if (n.type === 'INSTANCE' && n.name === 'Task') {
+    if (n.name === 'Task' && (n.type === 'INSTANCE' || n.type === 'FRAME' || n.type === 'COMPONENT')) {
       results.push(n);
-      return; // don't recurse inside a task
+      return;
     }
     if ('children' in n) n.children.forEach(walk);
   }
@@ -47,7 +52,6 @@ function findTaskInstances(node) {
   return results;
 }
 
-// Find all TEXT nodes matching a name predicate, recursively
 function findAllTextNodes(node) {
   const results = [];
   function walk(n) {
@@ -58,25 +62,20 @@ function findAllTextNodes(node) {
   return results;
 }
 
-// Safely read text from a TEXT node by searching for a named descendant
 function getText(node, layerName) {
   const found = descendantByName(node, layerName);
   if (!found || found.type !== 'TEXT') return '';
   return (found.characters || '').trim();
 }
 
-// Read the hyperlink URL from a TEXT node
-// The URL lives on the node's style-level hyperlink (whole-text link)
 function getUrl(node, layerName) {
   const found = descendantByName(node, layerName);
   if (!found || found.type !== 'TEXT') return '';
   try {
-    // Try .hyperlink first (set when the entire text has one link)
     const h = found.hyperlink;
     if (h && h.type === 'URL') return h.value;
   } catch (_) {}
   try {
-    // Fallback: getRangeHyperlink over the whole string
     const len = (found.characters || '').length;
     if (len > 0) {
       const h = found.getRangeHyperlink(0, len);
@@ -86,83 +85,60 @@ function getUrl(node, layerName) {
   return '';
 }
 
-// ─── Task extraction ──────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// TASK EXTRACTION
+// ═══════════════════════════════════════════════════════════════════════════════
 
 function extractTasks(sectionFrame) {
-  const instances = findTaskInstances(sectionFrame);
   const tasks = [];
-
-  for (const inst of instances) {
-    const title       = getText(inst, 'Task Name');
-    const description = getText(inst, 'Description');
-    const jiraUrl     = getUrl(inst, 'JiraLink');
-    const figmaUrl    = getUrl(inst, 'FigmaLink');
-
+  for (const node of findTaskNodes(sectionFrame)) {
+    const title       = getText(node, 'Task Name');
+    const description = getText(node, 'Description');
+    const jiraUrl     = getUrl(node, 'JiraLink');
+    const figmaUrl    = getUrl(node, 'FigmaLink');
     if (!title) continue;
     tasks.push({ title, description, jiraUrl, figmaUrl });
   }
-
   return tasks;
 }
 
-// ─── Date formatting ──────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// DATE FORMATTING
+// ═══════════════════════════════════════════════════════════════════════════════
 
-const MONTHS = {
-  january:'Jan', february:'Feb', march:'Mar', april:'Apr',
-  may:'May', june:'Jun', july:'Jul', august:'Aug',
-  september:'Sep', october:'Oct', november:'Nov', december:'Dec',
-};
-const MONTH_NUMS = {
-  january:'01', february:'02', march:'03', april:'04',
-  may:'05', june:'06', july:'07', august:'08',
-  september:'09', october:'10', november:'11', december:'12',
-};
+const MONTHS     = { january:'Jan',february:'Feb',march:'Mar',april:'Apr',may:'May',june:'Jun',july:'Jul',august:'Aug',september:'Sep',october:'Oct',november:'Nov',december:'Dec' };
+const MONTH_NUMS = { january:'01',february:'02',march:'03',april:'04',may:'05',june:'06',july:'07',august:'08',september:'09',october:'10',november:'11',december:'12' };
 
 function parseDateText(raw) {
   const s = (raw || '').trim();
-  const m = s.match(/(\d{1,2})\s+(\w+)\s+(\d{4})/i)
-         || s.match(/(\w+)\s+(\d{1,2}),?\s+(\d{4})/i);
+  const m = s.match(/(\d{1,2})\s+(\w+)\s+(\d{4})/i) || s.match(/(\w+)\s+(\d{1,2}),?\s+(\d{4})/i);
   if (!m) return { headerDate: s, bodyDate: s };
-
   let day, monthName, year;
   if (/^\d/.test(m[0])) { [, day, monthName, year] = m; }
   else                   { [, monthName, day, year] = m; }
-
-  const key   = monthName.toLowerCase();
-  const short = MONTHS[key]      || monthName.slice(0, 3);
-  const num   = MONTH_NUMS[key]  || '??';
-  const d     = day.padStart(2, '0');
-
+  const key = monthName.toLowerCase();
+  const d   = day.padStart(2, '0');
   return {
-    headerDate: `${d}.${num}.${year}`,    // 05.03.2026
-    bodyDate:   `${d} ${short}, ${year}`, // 05 Mar, 2026
+    headerDate: `${d}.${MONTH_NUMS[key] || '??'}.${year}`,
+    bodyDate:   `${d} ${MONTHS[key] || monthName.slice(0,3)}, ${year}`,
   };
 }
 
-// ─── Changelog formatting ─────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// CHANGELOG FORMATTING
+// ═══════════════════════════════════════════════════════════════════════════════
 
-function esc(str) {
-  return (str || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+function esc(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-// Plain text version (for copying)
 function taskToText(task) {
-  const jira  = task.jiraUrl  ? `🗂️ JIRA`  : '🗂️ JIRA';
-  const figma = task.figmaUrl ? `🧩 Figma` : '🧩 Figma';
-  return `${task.title}\n${task.description}\n${jira}   ${figma}`;
+  return `${task.title}\n${task.description}\n🗂️ JIRA   🧩 Figma`;
 }
 
-// HTML version (for display with clickable links)
 function taskToHtml(task) {
-  const jira  = task.jiraUrl
-    ? `<a href="${esc(task.jiraUrl)}" target="_blank">🗂️ JIRA</a>`
-    : `<span>🗂️ JIRA</span>`;
-  const figma = task.figmaUrl
-    ? `<a href="${esc(task.figmaUrl)}" target="_blank">🧩 Figma</a>`
-    : `<span>🧩 Figma</span>`;
+  const jira  = task.jiraUrl  ? `<a href="${esc(task.jiraUrl)}"  target="_blank">🗂️ JIRA</a>`  : `<span>🗂️ JIRA</span>`;
+  const figma = task.figmaUrl ? `<a href="${esc(task.figmaUrl)}" target="_blank">🧩 Figma</a>` : `<span>🧩 Figma</span>`;
   return `<div class="task">
     <div class="task-title">${esc(task.title)}</div>
     <div class="task-desc">${esc(task.description)}</div>
@@ -173,90 +149,262 @@ function taskToHtml(task) {
 function formatChangelog(version, rawDate, library, majorTasks, minorTasks) {
   const { headerDate, bodyDate } = parseDateText(rawDate);
   const lib = (library || '').trim() || 'UFC';
+  const div = `<div class="divider"></div>`;
 
-  // ── Plain text (copy) ────────────────────────────────────────────────────
-  let text = `Stable Update! ${lib} {Library} Stable ${version} (${headerDate})\n`;
-  text    += `Release Date:  ${bodyDate}\n`;
+  let text = `Stable Update! ${lib} {Library} Stable ${version} (${headerDate})\nRelease Date:  ${bodyDate}\n`;
+  let html  = `<div class="header"><div class="release-title">Stable Update! ${esc(lib)} &#123;Library&#125; Stable ${esc(version)} (${esc(headerDate)})</div><div class="release-date">Release Date: ${esc(bodyDate)}</div></div>`;
 
   if (majorTasks.length > 0) {
     text += `\n\n🔥 Major Updates:\n\n\n`;
     text += majorTasks.map(taskToText).join('\n\n________________________________________________\n\n\n');
     text += '\n\n________________________________________________\n';
+    html += `<div class="section-title">🔥 Major Updates:</div>` + majorTasks.map(taskToHtml).join(div) + div;
   }
   if (minorTasks.length > 0) {
     text += `\n\n💅 Minor Changes:\n\n\n`;
     text += minorTasks.map(taskToText).join('\n\n\n');
-  }
-
-  // ── HTML (display) ───────────────────────────────────────────────────────
-  const divider = `<div class="divider">________________________________________________</div>`;
-
-  let html = `<div class="header">
-    <div class="release-title">Stable Update! ${esc(lib)} &#123;Library&#125; Stable ${esc(version)} (${esc(headerDate)})</div>
-    <div class="release-date">Release Date: ${esc(bodyDate)}</div>
-  </div>`;
-
-  if (majorTasks.length > 0) {
-    html += `<div class="section-title">🔥 Major Updates:</div>`;
-    html += majorTasks.map(taskToHtml).join(divider);
-    html += divider;
-  }
-  if (minorTasks.length > 0) {
-    html += `<div class="section-title">💅 Minor Changes:</div>`;
-    html += minorTasks.map(taskToHtml).join('');
+    html += `<div class="section-title">💅 Minor Changes:</div>` + minorTasks.map(taskToHtml).join('');
   }
 
   return { text, html };
 }
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// GENERATE CHANGELOG (read from selected frame)
+// ═══════════════════════════════════════════════════════════════════════════════
 
 function generateChangelog(library) {
   const selection = figma.currentPage.selection;
-  if (selection.length === 0) {
-    throw new Error('Please select a release frame (e.g. "3.4.0") first.');
-  }
+  if (selection.length === 0) throw new Error('Select a release frame first (e.g. "3.4.0").');
 
   const root    = selection[0];
   const version = root.name;
 
-  // ── Date ──────────────────────────────────────────────────────────────────
   let rawDate = '';
   const titleFrame = descendantByName(root, 'Title');
   if (titleFrame) {
     for (const t of findAllTextNodes(titleFrame)) {
       const c = (t.characters || '').trim();
-      // Match "5 march 2026" — has a month word, not a version number
-      if (/\d{1,2}\s+[a-z]+\s+\d{4}/i.test(c) && !/\d+\.\d+\.\d+/.test(c)) {
-        rawDate = c;
-        break;
-      }
+      if (/\d{1,2}\s+[a-z]+\s+\d{4}/i.test(c) && !/\d+\.\d+\.\d+/.test(c)) { rawDate = c; break; }
     }
   }
   if (!rawDate) rawDate = new Date().toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' });
 
-  // ── Tasks ─────────────────────────────────────────────────────────────────
   const majorFrame = descendantByName(root, 'Major');
   const minorFrame = descendantByName(root, 'Minor');
-
   const majorTasks = majorFrame ? extractTasks(majorFrame) : [];
   const minorTasks = minorFrame ? extractTasks(minorFrame) : [];
 
-  // ── Debug info if nothing found ───────────────────────────────────────────
   if (majorTasks.length === 0 && minorTasks.length === 0) {
-    const rootChildren = 'children' in root
-      ? root.children.map(c => `"${c.name}"(${c.type})`).join(', ')
-      : 'none';
-    const majorInstances = majorFrame ? findTaskInstances(majorFrame).length : 0;
-    const minorInstances = minorFrame ? findTaskInstances(minorFrame).length : 0;
-    throw new Error(
-      `No tasks found.\n\n` +
-      `Frame: "${root.name}" children: ${rootChildren}\n` +
-      `"Major" frame: ${majorFrame ? 'found' : 'NOT FOUND'} — ${majorInstances} Task instance(s)\n` +
-      `"Minor" frame: ${minorFrame ? 'found' : 'NOT FOUND'} — ${minorInstances} Task instance(s)`
-    );
+    const kids = 'children' in root ? root.children.map(c=>`"${c.name}"(${c.type})`).join(', ') : 'none';
+    throw new Error(`No tasks found.\nFrame "${root.name}" children: ${kids}\n"Major": ${majorFrame ? findTaskNodes(majorFrame).length+' task(s)' : 'NOT FOUND'}\n"Minor": ${minorFrame ? findTaskNodes(minorFrame).length+' task(s)' : 'NOT FOUND'}`);
   }
 
-  const { text, html } = formatChangelog(version, rawDate, library, majorTasks, minorTasks);
-  return { text, html };
+  return formatChangelog(version, rawDate, library, majorTasks, minorTasks);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GENERATE TEMPLATE  (creates a new artboard matching node 61:47 exactly)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function generateTemplate(majorCount, minorCount) {
+  majorCount = majorCount || 1;
+  minorCount = minorCount || 3;
+
+  // Load fonts — Inter is always available in Figma Desktop
+  try {
+    await Promise.all([
+      figma.loadFontAsync({ family: 'Inter', style: 'Regular' }),
+      figma.loadFontAsync({ family: 'Inter', style: 'Medium' }),
+      figma.loadFontAsync({ family: 'Inter', style: 'Semi Bold' }),
+      figma.loadFontAsync({ family: 'Inter', style: 'Bold' }),
+    ]);
+  } catch (fontErr) {
+    throw new Error('Font load failed: ' + String(fontErr));
+  }
+
+  // ── Colour tokens (from node 61:47) ──────────────────────────────────────────
+  var C = {
+    white:        { r:1,    g:1,    b:1    },
+    black:        { r:0,    g:0,    b:0    },
+    darkGray:     { r:0.20, g:0.20, b:0.20 },   // date text
+    sectionLabel: { r:0.36, g:0.37, b:0.41 },   // section label text
+    taskBg:       { r:0.92, g:0.93, b:0.96 },   // Task card background
+    taskHeader:   { r:0.23, g:0.42, b:0.83 },   // Task card header (blue)
+    placeholder:  { r:0.88, g:0.88, b:0.90 },   // screenshot placeholder rect
+    linkColor:    { r:0.09, g:0.46, b:0.82 },   // JIRA / Figma link text
+  };
+
+  // ── Find existing "Task" component anywhere in the file ──────────────────────
+  var taskComponent = figma.root.findOne(function(n) {
+    return n.type === 'COMPONENT' && n.name === 'Task';
+  });
+
+  // ── Helpers ───────────────────────────────────────────────────────────────────
+
+  function mkText(name, chars, opts) {
+    opts = opts || {};
+    var t = figma.createText();
+    t.name           = name;
+    t.fontName       = { family: 'Inter', style: opts.style || 'Regular' };
+    t.fontSize       = opts.size !== undefined ? opts.size : 36;
+    t.characters     = chars;
+    var color        = opts.color   !== undefined ? opts.color   : C.black;
+    var opacity      = opts.opacity !== undefined ? opts.opacity : 1;
+    t.fills          = [{ type: 'SOLID', color: color, opacity: opacity }];
+    t.textAutoResize = 'HEIGHT';
+    return t;
+  }
+
+  // VERTICAL frames: counter axis (width) must be FIXED so children can FILL horizontally.
+  // HORIZONTAL frames: counter axis (height) uses AUTO so it hugs content height.
+  function mkFrame(name, opts) {
+    opts = opts || {};
+    var f = figma.createFrame();
+    f.name  = name;
+    f.fills = opts.bg ? [{ type: 'SOLID', color: opts.bg }] : [];
+    if (opts.radius) f.cornerRadius = opts.radius;
+    if (opts.layout) {
+      var isVert              = opts.layout === 'VERTICAL';
+      f.layoutMode            = opts.layout;
+      f.primaryAxisSizingMode = opts.primarySizing || 'AUTO';
+      f.counterAxisSizingMode = isVert ? 'FIXED' : 'AUTO';
+      f.resize(opts.w !== undefined ? opts.w : 1200, 100);
+      f.itemSpacing   = opts.gap !== undefined ? opts.gap : 0;
+      f.paddingTop    = opts.pt  !== undefined ? opts.pt  : (opts.pad || 0);
+      f.paddingBottom = opts.pb  !== undefined ? opts.pb  : (opts.pad || 0);
+      f.paddingLeft   = opts.pl  !== undefined ? opts.pl  : (opts.pad || 0);
+      f.paddingRight  = opts.pr  !== undefined ? opts.pr  : (opts.pad || 0);
+      if (opts.primaryAlign) f.primaryAxisAlignItems = opts.primaryAlign;
+      if (opts.counterAlign) f.counterAxisAlignItems = opts.counterAlign;
+    }
+    return f;
+  }
+
+  // Append child then make it fill the parent's width (for children of VERTICAL frames)
+  function appendFill(parent, child) {
+    parent.appendChild(child);
+    try { child.layoutSizingHorizontal = 'FILL'; } catch (_) {}
+  }
+
+  // ── Task card ─────────────────────────────────────────────────────────────────
+  // Uses the real "Task" component instance if found; falls back to a plain frame.
+
+  function createTask() {
+    if (taskComponent) {
+      return taskComponent.createInstance();
+    }
+    // Fallback: plain frame matching the real Task component's layer structure
+    var task = mkFrame('Task', { bg: C.taskBg, layout:'VERTICAL', gap:24, pb:32, radius:16, w:1200 });
+
+    var hdr = mkFrame('Header', { bg: C.taskHeader, layout:'HORIZONTAL', pt:12, pb:12, pl:24, pr:24, primaryAlign:'SPACE_BETWEEN', w:1200 });
+    var taskName = mkText('Task Name', '[TAG] Task title', { style:'Bold', size:36, color: C.white });
+    appendFill(hdr, taskName);
+    var contrib = figma.createEllipse();
+    contrib.name  = 'Contributor';
+    contrib.fills = [{ type: 'SOLID', color: C.white, opacity: 0.4 }];
+    contrib.resize(80, 80);
+    hdr.appendChild(contrib);
+    task.appendChild(hdr);
+
+    var content = mkFrame('Content', { layout:'VERTICAL', pl:20, pr:20, gap:24, w:1200 });
+    var desc = mkText('Description', 'Describe what was changed in this task...', { size:36, color: C.black, opacity: 0.80 });
+    appendFill(content, desc);
+    var links = mkFrame('Links', { layout:'HORIZONTAL', gap:11, counterAlign:'CENTER' });
+    links.appendChild(mkText('JiraLink',  'JIRA',  { style:'Bold', size:36, color: C.linkColor }));
+    links.appendChild(mkText('FigmaLink', 'Figma', { style:'Bold', size:36, color: C.linkColor }));
+    content.appendChild(links);
+    appendFill(task, content);
+    return task;
+  }
+
+  // ── Title block ───────────────────────────────────────────────────────────────
+  // Matches node 61:47 structure:
+  //   Title (HORIZONTAL, pb=32)
+  //     Frame 10 (VERTICAL, w=1106)
+  //       Date   – Inter Semi Bold 48px, dark gray
+  //       Frame 9 (VERTICAL, gap=32)
+  //         Version – Inter Medium 128px, black
+
+  var today      = new Date();
+  var MONTHS_LC  = ['january','february','march','april','may','june','july','august','september','october','november','december'];
+  var dateStr    = today.getDate() + ' ' + MONTHS_LC[today.getMonth()] + ' ' + today.getFullYear();
+
+  var frame9 = mkFrame('Frame 9', { layout:'VERTICAL', gap:32, w:1106 });
+  appendFill(frame9, mkText('Version', 'Stable Version x.x.x', { style:'Medium', size:128, color: C.black }));
+
+  var frame10 = mkFrame('Frame 10', { layout:'VERTICAL', w:1106 });
+  appendFill(frame10, mkText('Date', dateStr, { style:'Semi Bold', size:48, color: C.darkGray }));
+  frame10.appendChild(frame9);
+
+  // Title frame: HORIZONTAL, pb=32. Frame 10 sits on the left at its own width (1106).
+  var titleBlock = mkFrame('Title', { layout:'HORIZONTAL', pb:32, w:3500 });
+  titleBlock.appendChild(frame10);
+
+  // ── Section factory ───────────────────────────────────────────────────────────
+  // Each section matches node 61:47: HORIZONTAL, FIXED 3500px, SPACE_BETWEEN
+  //   Col 1 – label text (1005 wide, Inter Medium 128px, section-label colour)
+  //   Col 2 – screenshot placeholder rectangle (780 × 675)
+  //   Col 3 – task cards stacked vertically (1200 wide)
+
+  function createSection(name, labelStr, count) {
+    var sec = mkFrame(name, {
+      layout:        'HORIZONTAL',
+      primarySizing: 'FIXED',
+      w:             3500,
+      gap:           200,
+      primaryAlign:  'SPACE_BETWEEN',
+    });
+
+    // Col 1 — label
+    var col1 = mkFrame(name + ' Label', { layout:'VERTICAL', counterAlign:'CENTER', w:1005 });
+    appendFill(col1, mkText(name + ' Label Text', labelStr, { style:'Medium', size:128, color: C.sectionLabel }));
+    sec.appendChild(col1);
+
+    // Col 2 — screenshot / image placeholder
+    var screen = figma.createRectangle();
+    screen.name         = 'Screen';
+    screen.fills        = [{ type: 'SOLID', color: C.placeholder }];
+    screen.cornerRadius = 16;
+    screen.resize(780, 675);
+    sec.appendChild(screen);
+
+    // Col 3 — task cards
+    var col3 = mkFrame(name + ' Tasks', { layout:'VERTICAL', gap:24, w:1200 });
+    for (var i = 0; i < count; i++) {
+      col3.appendChild(createTask());
+    }
+    sec.appendChild(col3);
+
+    return sec;
+  }
+
+  // ── Main frame ────────────────────────────────────────────────────────────────
+  // Matches node 61:47: 4012 wide, white, cornerRadius=128, padding=256, gap=32
+
+  var main = figma.createFrame();
+  main.name                  = 'x.x.x';
+  main.layoutMode            = 'VERTICAL';
+  main.primaryAxisSizingMode = 'AUTO';
+  main.counterAxisSizingMode = 'FIXED';
+  main.resize(4012, 100);
+  main.itemSpacing           = 32;
+  main.paddingTop            = 256;
+  main.paddingBottom         = 256;
+  main.paddingLeft           = 256;
+  main.paddingRight          = 256;
+  main.fills                 = [{ type: 'SOLID', color: C.white }];
+  main.cornerRadius          = 128;
+
+  appendFill(main, titleBlock);
+  appendFill(main, createSection('Major', 'New features\nand major\nupdates', majorCount));
+  appendFill(main, createSection('Minor', 'Minor changes\nand fixes',         minorCount));
+
+  // ── Place in canvas & select ──────────────────────────────────────────────────
+
+  main.x = figma.viewport.center.x - main.width  / 2;
+  main.y = figma.viewport.center.y - main.height / 2;
+  figma.currentPage.appendChild(main);
+  figma.currentPage.selection = [main];
+  figma.viewport.scrollAndZoomIntoView([main]);
 }

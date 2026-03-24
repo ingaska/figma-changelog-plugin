@@ -7,128 +7,164 @@
 
     body {
       font-family: Inter, -apple-system, sans-serif;
-      font-size: 12px;
-      color: #333;
-      background: #fff;
-      padding: 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      height: 100vh;
+      font-size: 12px; color: #333; background: #fff;
+      padding: 16px; display: flex; flex-direction: column;
+      gap: 12px; height: 100vh;
     }
 
     h2 { font-size: 14px; font-weight: 600; color: #111; }
 
+    /* ── Tabs ── */
+    .tabs { display: flex; gap: 0; border-bottom: 2px solid #eee; }
+    .tab {
+      padding: 6px 16px; font-size: 12px; font-weight: 500;
+      color: #888; cursor: pointer; border: none; background: none;
+      border-bottom: 2px solid transparent; margin-bottom: -2px;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .tab.active { color: #18a0fb; border-bottom-color: #18a0fb; }
+
+    .panel { display: none; flex-direction: column; gap: 12px; flex: 1; }
+    .panel.active { display: flex; }
+
+    /* ── Form rows ── */
     .row { display: flex; align-items: center; gap: 8px; }
-
     label { font-size: 11px; font-weight: 500; color: #666; white-space: nowrap; }
-
-    input[type="text"] {
+    input[type="text"], input[type="number"] {
       flex: 1; padding: 6px 8px; border: 1px solid #ddd;
       border-radius: 6px; font-size: 12px; outline: none;
       transition: border-color 0.15s;
     }
-    input[type="text"]:focus { border-color: #18a0fb; }
+    input[type="number"] { width: 56px; flex: none; text-align: center; }
+    input:focus { border-color: #18a0fb; }
 
+    /* ── Buttons ── */
     .btn {
       padding: 7px 14px; border: none; border-radius: 6px;
       font-size: 12px; font-weight: 500; cursor: pointer;
       transition: opacity 0.15s; white-space: nowrap;
     }
     .btn:hover { opacity: 0.85; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
     .btn-primary  { background: #18a0fb; color: #fff; }
+    .btn-green    { background: #1bc47d; color: #fff; }
     .btn-copy     { background: #1bc47d; color: #fff; }
 
-    .hint { font-size: 10px; color: #999; }
+    .actions { display: flex; gap: 8px; align-items: center; }
+    .hint    { font-size: 10px; color: #999; }
+    .copied  { font-size: 10px; color: #1bc47d; display: none; }
+    .success { font-size: 11px; color: #1bc47d; display: none; font-weight: 500; }
 
+    /* ── Error ── */
     .error {
       background: #fff3f3; border: 1px solid #f5a0a0;
       border-radius: 6px; padding: 8px 10px; color: #c00;
       font-size: 11px; display: none; white-space: pre-wrap;
     }
 
-    .actions { display: flex; gap: 8px; align-items: center; }
-
-    .copied { font-size: 10px; color: #1bc47d; display: none; }
-
-    /* ── Preview panel ── */
+    /* ── Preview ── */
     #preview {
-      flex: 1;
-      overflow-y: auto;
-      border: 1px solid #ddd;
-      border-radius: 6px;
-      padding: 12px 14px;
-      background: #fafafa;
-      font-size: 11px;
-      line-height: 1.55;
-      color: #888;
+      flex: 1; overflow-y: auto; border: 1px solid #ddd;
+      border-radius: 6px; padding: 12px 14px;
+      background: #fafafa; font-size: 11px; line-height: 1.55; color: #888;
     }
     #preview.has-content { color: #222; background: #fff; }
-
     #preview .header { margin-bottom: 12px; }
     #preview .release-title { font-weight: 700; font-size: 12px; color: #111; }
     #preview .release-date  { font-size: 11px; color: #555; margin-top: 2px; }
-
-    #preview .section-title {
-      font-weight: 700; font-size: 12px;
-      margin: 14px 0 8px;
-    }
-
-    #preview .task { padding: 8px 0; }
-    #preview .task-title {
-      font-weight: 600; font-size: 12px; color: #111; margin-bottom: 3px;
-    }
-    #preview .task-desc {
-      color: #444; font-size: 11px; margin-bottom: 6px;
-      white-space: pre-wrap;
-    }
-    #preview .task-links { display: flex; gap: 12px; }
-    #preview .task-links a {
-      color: #18a0fb; text-decoration: underline;
-      font-weight: 600; font-size: 11px;
-    }
+    #preview .section-title { font-weight: 700; font-size: 12px; margin: 14px 0 8px; }
+    #preview .task          { padding: 8px 0; }
+    #preview .task-title    { font-weight: 600; font-size: 12px; color: #111; margin-bottom: 3px; }
+    #preview .task-desc     { color: #444; font-size: 11px; margin-bottom: 6px; white-space: pre-wrap; }
+    #preview .task-links    { display: flex; gap: 12px; }
+    #preview .task-links a  { color: #18a0fb; text-decoration: underline; font-weight: 600; font-size: 11px; }
     #preview .task-links span { color: #999; font-size: 11px; }
+    #preview .divider       { border-top: 1px solid #e5e5e5; margin: 8px 0; }
 
-    #preview .divider {
-      border-top: 1px solid #e5e5e5;
-      margin: 8px 0;
-      font-size: 0;
-      color: transparent;
+    /* ── Template panel specifics ── */
+    .count-row { display: flex; align-items: center; gap: 24px; }
+    .count-item { display: flex; align-items: center; gap: 8px; }
+
+    .template-info {
+      background: #f0f7ff; border: 1px solid #c2dcf8;
+      border-radius: 6px; padding: 10px 12px;
+      font-size: 11px; color: #2563aa; line-height: 1.6;
     }
+    .template-info b { color: #1a4fa0; }
   </style>
 </head>
 <body>
   <h2>Changelog Generator</h2>
 
-  <div class="row">
-    <label>Library name</label>
-    <input type="text" id="library" value="UFC" placeholder="e.g. UFC" />
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab active" data-tab="generate">Generate text</button>
+    <button class="tab"        data-tab="template">Create template</button>
   </div>
 
-  <div class="hint">Select a release frame in Figma, then click Generate.</div>
-
-  <div class="actions">
-    <button class="btn btn-primary" id="generateBtn">Generate</button>
-    <button class="btn btn-copy" id="copyBtn" style="display:none">Copy text</button>
-    <span class="copied" id="copiedLabel">Copied!</span>
+  <!-- ── Generate text panel ── -->
+  <div class="panel active" id="panel-generate">
+    <div class="row">
+      <label>Library name</label>
+      <input type="text" id="library" value="UFC" placeholder="e.g. UFC" />
+    </div>
+    <div class="hint">Select a release frame in Figma, then click Generate.</div>
+    <div class="actions">
+      <button class="btn btn-primary" id="generateBtn">Generate</button>
+      <button class="btn btn-copy"    id="copyBtn" style="display:none">Copy text</button>
+      <span class="copied" id="copiedLabel">Copied!</span>
+    </div>
+    <div class="error" id="genError"></div>
+    <div id="preview">Changelog will appear here…</div>
   </div>
 
-  <div class="error" id="errorBox"></div>
+  <!-- ── Create template panel ── -->
+  <div class="panel" id="panel-template">
+    <div class="template-info">
+      Creates a ready-to-fill artboard on the current page.<br/>
+      <b>Workflow:</b> Create template → fill in tasks → switch to "Generate text" tab → select frame → Generate.
+    </div>
 
-  <div id="preview">Changelog will appear here…</div>
+    <div class="count-row">
+      <div class="count-item">
+        <label>🔥 Major tasks</label>
+        <input type="number" id="majorCount" value="1" min="0" max="20" />
+      </div>
+      <div class="count-item">
+        <label>💅 Minor tasks</label>
+        <input type="number" id="minorCount" value="3" min="0" max="20" />
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="btn btn-green" id="templateBtn">Create template</button>
+      <span class="success" id="templateSuccess">✓ Template created! Fill it in Figma.</span>
+    </div>
+    <div class="error" id="tmplError"></div>
+  </div>
 
   <script>
-    const generateBtn = document.getElementById('generateBtn');
-    const copyBtn     = document.getElementById('copyBtn');
-    const copiedLabel = document.getElementById('copiedLabel');
-    const preview     = document.getElementById('preview');
-    const errorBox    = document.getElementById('errorBox');
-    const libraryEl   = document.getElementById('library');
+    // ── Tab switching ──────────────────────────────────────────────────────────
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
+      });
+    });
 
+    // ── Generate changelog ─────────────────────────────────────────────────────
+    const generateBtn  = document.getElementById('generateBtn');
+    const copyBtn      = document.getElementById('copyBtn');
+    const copiedLabel  = document.getElementById('copiedLabel');
+    const preview      = document.getElementById('preview');
+    const genError     = document.getElementById('genError');
+    const libraryEl    = document.getElementById('library');
     let plainText = '';
 
     generateBtn.addEventListener('click', () => {
-      errorBox.style.display = 'none';
+      genError.style.display = 'none';
       copyBtn.style.display  = 'none';
       preview.classList.remove('has-content');
       preview.textContent = 'Generating…';
@@ -142,6 +178,26 @@
       });
     });
 
+    // ── Generate template ──────────────────────────────────────────────────────
+    const templateBtn     = document.getElementById('templateBtn');
+    const templateSuccess = document.getElementById('templateSuccess');
+    const tmplError       = document.getElementById('tmplError');
+
+    templateBtn.addEventListener('click', () => {
+      tmplError.style.display       = 'none';
+      templateSuccess.style.display = 'none';
+      templateBtn.disabled = true;
+      templateBtn.textContent = 'Creating…';
+      parent.postMessage({
+        pluginMessage: {
+          type:       'generate-template',
+          majorCount: parseInt(document.getElementById('majorCount').value) || 1,
+          minorCount: parseInt(document.getElementById('minorCount').value) || 3,
+        }
+      }, '*');
+    });
+
+    // ── Messages from plugin ───────────────────────────────────────────────────
     window.onmessage = (event) => {
       const msg = event.data.pluginMessage;
       if (!msg) return;
@@ -150,14 +206,29 @@
         plainText = msg.text;
         preview.innerHTML = msg.html;
         preview.classList.add('has-content');
-        copyBtn.style.display = 'inline-block';
-        errorBox.style.display = 'none';
+        copyBtn.style.display  = 'inline-block';
+        genError.style.display = 'none';
+
+      } else if (msg.type === 'template-done') {
+        templateBtn.disabled    = false;
+        templateBtn.textContent = 'Create template';
+        templateSuccess.style.display = 'inline';
+
       } else if (msg.type === 'error') {
-        preview.textContent = '';
-        preview.classList.remove('has-content');
-        copyBtn.style.display = 'none';
-        errorBox.textContent = msg.message;
-        errorBox.style.display = 'block';
+        // figure out which panel is active
+        const isTemplate = document.getElementById('panel-template').classList.contains('active');
+        if (isTemplate) {
+          tmplError.textContent    = msg.message;
+          tmplError.style.display  = 'block';
+          templateBtn.disabled     = false;
+          templateBtn.textContent  = 'Create template';
+        } else {
+          preview.textContent      = '';
+          preview.classList.remove('has-content');
+          copyBtn.style.display    = 'none';
+          genError.textContent     = msg.message;
+          genError.style.display   = 'block';
+        }
       }
     };
   </script>
