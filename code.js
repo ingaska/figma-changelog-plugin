@@ -132,6 +132,22 @@ function esc(s) {
   return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
+// Escape HTML, then turn any bare https?:// URLs into clickable <a> tags.
+// Newlines are preserved as <br> so multi-line descriptions render correctly.
+function linkify(s) {
+  var escaped = esc(s || '');
+  // Replace URLs (already HTML-safe at this point — URLs don't contain &/</>)
+  escaped = escaped.replace(/https?:\/\/[^\s<>"']+/g, function(url) {
+    // Strip trailing punctuation that is unlikely to be part of the URL
+    var trail = '';
+    var m = url.match(/([.,;:!?)]+)$/);
+    if (m) { trail = m[1]; url = url.slice(0, url.length - trail.length); }
+    return '<a href="' + url + '" target="_blank">' + url + '</a>' + trail;
+  });
+  // Preserve line-breaks
+  return escaped.replace(/\n/g, '<br>');
+}
+
 function taskToText(task) {
   return `${task.title}\n${task.description}\n🗂️ JIRA   🧩 Figma`;
 }
@@ -141,7 +157,7 @@ function taskToHtml(task) {
   const figma = task.figmaUrl ? `<a href="${esc(task.figmaUrl)}" target="_blank">🧩 Figma</a>` : `<span>🧩 Figma</span>`;
   return `<div class="task">
     <div class="task-title">${esc(task.title)}</div>
-    <div class="task-desc">${esc(task.description)}</div>
+    <div class="task-desc">${linkify(task.description)}</div>
     <div class="task-links">${jira}&nbsp;&nbsp;&nbsp;${figma}</div>
   </div>`;
 }
