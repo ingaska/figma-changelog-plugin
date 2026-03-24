@@ -85,6 +85,51 @@ function getUrl(node, layerName) {
   return '';
 }
 
+// Walk a TEXT node character-by-character and return an HTML string where
+// any Figma-hyperlinked ranges become <a> tags, and bare URLs in plain
+// segments are also linkified.
+function getDescriptionHtml(node, layerName) {
+  const found = descendantByName(node, layerName);
+  if (!found || found.type !== 'TEXT') return '';
+  const chars = found.characters || '';
+  if (!chars) return '';
+
+  // Build [{text, url}] segments by grouping consecutive chars with the same hyperlink
+  const segments = [];
+  var i = 0;
+  while (i < chars.length) {
+    var currentUrl = null;
+    try {
+      const h = found.getRangeHyperlink(i, i + 1);
+      if (h && h.type === 'URL') currentUrl = h.value;
+    } catch (_) {}
+
+    var j = i + 1;
+    while (j < chars.length) {
+      var nextUrl = null;
+      try {
+        const h = found.getRangeHyperlink(j, j + 1);
+        if (h && h.type === 'URL') nextUrl = h.value;
+      } catch (_) {}
+      if (nextUrl !== currentUrl) break;
+      j++;
+    }
+
+    segments.push({ text: chars.slice(i, j), url: currentUrl });
+    i = j;
+  }
+
+  // Render segments to HTML
+  return segments.map(function(seg) {
+    if (seg.url) {
+      // Figma hyperlink: wrap the display text in an <a>
+      return '<a href="' + esc(seg.url) + '" target="_blank">' + esc(seg.text) + '</a>';
+    }
+    // Plain text: linkify any bare URLs and preserve line-breaks
+    return linkify(seg.text);
+  }).join('');
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // TASK EXTRACTION
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -92,12 +137,13 @@ function getUrl(node, layerName) {
 function extractTasks(sectionFrame) {
   const tasks = [];
   for (const node of findTaskNodes(sectionFrame)) {
-    const title       = getText(node, 'Task Name');
-    const description = getText(node, 'Description');
-    const jiraUrl     = getUrl(node, 'JiraLink');
-    const figmaUrl    = getUrl(node, 'FigmaLink');
+    const title           = getText(node, 'Task Name');
+    const description     = getText(node, 'Description');
+    const descriptionHtml = getDescriptionHtml(node, 'Description');
+    const jiraUrl         = getUrl(node, 'JiraLink');
+    const figmaUrl        = getUrl(node, 'FigmaLink');
     if (!title) continue;
-    tasks.push({ title, description, jiraUrl, figmaUrl });
+    tasks.push({ title, description, descriptionHtml, jiraUrl, figmaUrl });
   }
   return tasks;
 }
@@ -155,9 +201,12 @@ function taskToText(task) {
 function taskToHtml(task) {
   const jira  = task.jiraUrl  ? `<a href="${esc(task.jiraUrl)}"  target="_blank">🗂️ JIRA</a>`  : `<span>🗂️ JIRA</span>`;
   const figma = task.figmaUrl ? `<a href="${esc(task.figmaUrl)}" target="_blank">🧩 Figma</a>` : `<span>🧩 Figma</span>`;
+  // Prefer the rich HTML version (Figma hyperlinks + bare URL detection);
+  // fall back to linkify on plain text if descriptionHtml wasn't populated.
+  const descHtml = task.descriptionHtml || linkify(task.description);
   return `<div class="task">
     <div class="task-title">${esc(task.title)}</div>
-    <div class="task-desc">${linkify(task.description)}</div>
+    <div class="task-desc">${descHtml}</div>
     <div class="task-links">${jira}&nbsp;&nbsp;&nbsp;${figma}</div>
   </div>`;
 }
