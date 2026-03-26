@@ -68,18 +68,35 @@ function getText(node, layerName) {
   return (found.characters || '').trim();
 }
 
+// Convert any Figma HyperlinkTarget to a plain URL string.
+// External links → h.value as-is.
+// Internal NODE links → construct a figma.com URL from the node ID.
+function hyperlinkToUrl(h) {
+  if (!h) return null;
+  if (h.type === 'URL') return h.value;
+  if (h.type === 'NODE') {
+    var fileKey = figma.fileKey;
+    if (!fileKey) return null;
+    // Plugin API node IDs use "142:75"; Figma URLs use "142-75"
+    var nodeId = (h.value || '').replace(':', '-');
+    return 'https://www.figma.com/design/' + fileKey + '/' +
+           encodeURIComponent(figma.root.name) + '?node-id=' + nodeId;
+  }
+  return null;
+}
+
 function getUrl(node, layerName) {
   const found = descendantByName(node, layerName);
   if (!found || found.type !== 'TEXT') return '';
   try {
-    const h = found.hyperlink;
-    if (h && h.type === 'URL') return h.value;
+    const url = hyperlinkToUrl(found.hyperlink);
+    if (url) return url;
   } catch (_) {}
   try {
     const len = (found.characters || '').length;
     if (len > 0) {
-      const h = found.getRangeHyperlink(0, len);
-      if (h && h.type === 'URL') return h.value;
+      const url = hyperlinkToUrl(found.getRangeHyperlink(0, len));
+      if (url) return url;
     }
   } catch (_) {}
   return '';
@@ -100,16 +117,14 @@ function getDescriptionHtml(node, layerName) {
   while (i < chars.length) {
     var currentUrl = null;
     try {
-      const h = found.getRangeHyperlink(i, i + 1);
-      if (h && h.type === 'URL') currentUrl = h.value;
+      currentUrl = hyperlinkToUrl(found.getRangeHyperlink(i, i + 1));
     } catch (_) {}
 
     var j = i + 1;
     while (j < chars.length) {
       var nextUrl = null;
       try {
-        const h = found.getRangeHyperlink(j, j + 1);
-        if (h && h.type === 'URL') nextUrl = h.value;
+        nextUrl = hyperlinkToUrl(found.getRangeHyperlink(j, j + 1));
       } catch (_) {}
       if (nextUrl !== currentUrl) break;
       j++;
