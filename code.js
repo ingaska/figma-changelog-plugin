@@ -18,6 +18,15 @@ figma.ui.onmessage = (msg) => {
         figma.ui.postMessage({ type: 'error', message: msg });
       });
 
+  } else if (msg.type === 'goto-node') {
+    try {
+      var target = figma.getNodeById(msg.nodeId);
+      if (target) {
+        figma.currentPage.selection = [target];
+        figma.viewport.scrollAndZoomIntoView([target]);
+      }
+    } catch (_) {}
+
   } else if (msg.type === 'close') {
     figma.closePlugin();
   }
@@ -68,21 +77,27 @@ function getText(node, layerName) {
   return (found.characters || '').trim();
 }
 
-// Convert any Figma HyperlinkTarget to a plain URL string.
-// External links → h.value as-is.
-// Internal NODE links → construct a figma.com URL from the node ID.
+// Convert a HyperlinkTarget to a URL string.
+// URL type  → value as-is.
+// NODE type → figma.com URL when fileKey is available; null otherwise.
 function hyperlinkToUrl(h) {
   if (!h) return null;
   if (h.type === 'URL') return h.value;
   if (h.type === 'NODE') {
     var fileKey = figma.fileKey;
     if (!fileKey) return null;
-    // Plugin API node IDs use "142:75"; Figma URLs use "142-75"
-    var nodeId = (h.value || '').replace(':', '-');
+    // Plugin API uses "142:75"; Figma URLs use "142-75"
+    var nodeId = (h.value || '').replace(/:/g, '-');
     return 'https://www.figma.com/design/' + fileKey + '/' +
            encodeURIComponent(figma.root.name) + '?node-id=' + nodeId;
   }
   return null;
+}
+
+// Extract the raw node ID from a NODE-type HyperlinkTarget ('' otherwise).
+// Used as fallback when figma.fileKey is unavailable (local plugin dev mode).
+function hyperlinkNodeId(h) {
+  return (h && h.type === 'NODE') ? (h.value || '') : '';
 }
 
 function getUrl(node, layerName) {
@@ -102,6 +117,25 @@ function getUrl(node, layerName) {
   return '';
 }
 
+// Return the Figma node ID from a NODE-type hyperlink on a text layer.
+// Returns '' when the link is a plain URL or when there is no hyperlink.
+function getNodeId(node, layerName) {
+  const found = descendantByName(node, layerName);
+  if (!found || found.type !== 'TEXT') return '';
+  try {
+    const id = hyperlinkNodeId(found.hyperlink);
+    if (id) return id;
+  } catch (_) {}
+  try {
+    const len = (found.characters || '').length;
+    if (len > 0) {
+      const id = hyperlinkNodeId(found.getRangeHyperlink(0, len));
+      if (id) return id;
+    }
+  } catch (_) {}
+  return '';
+}
+
 // Walk a TEXT node character-by-character and return an HTML string where
 // any Figma-hyperlinked ranges become <a> tags, and bare URLs in plain
 // segments are also linkified.
@@ -111,36 +145,45 @@ function getDescriptionHtml(node, layerName) {
   const chars = found.characters || '';
   if (!chars) return '';
 
-  // Build [{text, url}] segments by grouping consecutive chars with the same hyperlink
+  // Build [{text, url, nodeId}] segments grouping consecutive chars with same hyperlink
   const segments = [];
   var i = 0;
   while (i < chars.length) {
     var currentUrl = null;
+    var currentNodeId = '';
     try {
-      currentUrl = hyperlinkToUrl(found.getRangeHyperlink(i, i + 1));
+      var h = found.getRangeHyperlink(i, i + 1);
+      currentUrl    = hyperlinkToUrl(h);
+      currentNodeId = currentUrl ? '' : hyperlinkNodeId(h);
     } catch (_) {}
 
     var j = i + 1;
     while (j < chars.length) {
       var nextUrl = null;
+      var nextNodeId = '';
       try {
-        nextUrl = hyperlinkToUrl(found.getRangeHyperlink(j, j + 1));
+        var hj = found.getRangeHyperlink(j, j + 1);
+        nextUrl    = hyperlinkToUrl(hj);
+        nextNodeId = nextUrl ? '' : hyperlinkNodeId(hj);
       } catch (_) {}
-      if (nextUrl !== currentUrl) break;
+      if (nextUrl !== currentUrl || nextNodeId !== currentNodeId) break;
       j++;
     }
 
-    segments.push({ text: chars.slice(i, j), url: currentUrl });
+    segments.push({ text: chars.slice(i, j), url: currentUrl, nodeId: currentNodeId });
     i = j;
   }
 
   // Render segments to HTML
   return segments.map(function(seg) {
+    var inner = esc(seg.text).replace(/\n/g, '<br>');
     if (seg.url) {
-      // Figma hyperlink: wrap the display text in an <a>; convert newlines to <br>
-      return '<a href="' + esc(seg.url) + '" target="_blank">' + esc(seg.text).replace(/\n/g, '<br>') + '</a>';
+      return '<a href="' + esc(seg.url) + '" target="_blank">' + inner + '</a>';
     }
-    // Plain text: linkify bare URLs and convert newlines to <br>
+    if (seg.nodeId) {
+      // NODE link without fileKey: navigate within Figma when clicked
+      return '<a href="#" class="node-link" data-node-id="' + esc(seg.nodeId) + '">' + inner + '</a>';
+    }
     return linkify(seg.text);
   }).join('');
 }
@@ -157,8 +200,10 @@ function extractTasks(sectionFrame) {
     const descriptionHtml = getDescriptionHtml(node, 'Description');
     const jiraUrl         = getUrl(node, 'JiraLink');
     const figmaUrl        = getUrl(node, 'FigmaLink');
+    // figmaNodeId: node ID for internal NODE links when figma.fileKey is unavailable
+    const figmaNodeId     = figmaUrl ? '' : getNodeId(node, 'FigmaLink');
     if (!title) continue;
-    tasks.push({ title, description, descriptionHtml, jiraUrl, figmaUrl });
+    tasks.push({ title, description, descriptionHtml, jiraUrl, figmaUrl, figmaNodeId });
   }
   return tasks;
 }
@@ -214,15 +259,22 @@ function taskToText(task) {
 }
 
 function taskToHtml(task) {
-  const jira  = task.jiraUrl  ? `<a href="${esc(task.jiraUrl)}"  target="_blank">🗂️ JIRA</a>`  : `<span>🗂️ JIRA</span>`;
-  const figma = task.figmaUrl ? `<a href="${esc(task.figmaUrl)}" target="_blank">🧩 Figma</a>` : `<span>🧩 Figma</span>`;
-  // Prefer the rich HTML version (Figma hyperlinks + bare URL detection);
-  // fall back to linkify on plain text if descriptionHtml wasn't populated.
+  const jira = task.jiraUrl
+    ? `<a href="${esc(task.jiraUrl)}" target="_blank">🗂️ JIRA</a>`
+    : `<span>🗂️ JIRA</span>`;
+
+  // figmaUrl → external link; figmaNodeId → navigate within Figma; neither → gray span
+  const figmaLink = task.figmaUrl
+    ? `<a href="${esc(task.figmaUrl)}" target="_blank">🧩 Figma</a>`
+    : task.figmaNodeId
+      ? `<a href="#" class="node-link" data-node-id="${esc(task.figmaNodeId)}">🧩 Figma</a>`
+      : `<span>🧩 Figma</span>`;
+
   const descHtml = task.descriptionHtml || linkify(task.description);
   return `<div class="task">
     <div class="task-title">${esc(task.title)}</div>
     <div class="task-desc">${descHtml}</div>
-    <div class="task-links">${jira}${figma}</div>
+    <div class="task-links">${jira}${figmaLink}</div>
   </div>`;
 }
 

@@ -171,6 +171,14 @@
       parent.postMessage({ pluginMessage: { type: 'generate', library: libraryEl.value } }, '*');
     });
 
+    // NODE-type internal links: navigate within Figma instead of opening a browser tab
+    preview.addEventListener('click', (e) => {
+      const link = e.target.closest('.node-link');
+      if (!link) return;
+      e.preventDefault();
+      parent.postMessage({ pluginMessage: { type: 'goto-node', nodeId: link.dataset.nodeId } }, '*');
+    });
+
     copyBtn.addEventListener('click', () => {
       navigator.clipboard.writeText(plainText).then(() => {
         copiedLabel.style.display = 'inline';
