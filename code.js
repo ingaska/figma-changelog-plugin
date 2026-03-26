@@ -137,10 +137,10 @@ function getDescriptionHtml(node, layerName) {
   // Render segments to HTML
   return segments.map(function(seg) {
     if (seg.url) {
-      // Figma hyperlink: wrap the display text in an <a>
-      return '<a href="' + esc(seg.url) + '" target="_blank">' + esc(seg.text) + '</a>';
+      // Figma hyperlink: wrap the display text in an <a>; convert newlines to <br>
+      return '<a href="' + esc(seg.url) + '" target="_blank">' + esc(seg.text).replace(/\n/g, '<br>') + '</a>';
     }
-    // Plain text: linkify any bare URLs and preserve line-breaks
+    // Plain text: linkify bare URLs and convert newlines to <br>
     return linkify(seg.text);
   }).join('');
 }
@@ -222,7 +222,7 @@ function taskToHtml(task) {
   return `<div class="task">
     <div class="task-title">${esc(task.title)}</div>
     <div class="task-desc">${descHtml}</div>
-    <div class="task-links">${jira}&nbsp;&nbsp;&nbsp;${figma}</div>
+    <div class="task-links">${jira}${figma}</div>
   </div>`;
 }
 
