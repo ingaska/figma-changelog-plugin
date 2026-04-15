@@ -22,6 +22,12 @@ figma.ui.onmessage = (msg) => {
     try {
       var target = figma.getNodeById(msg.nodeId);
       if (target) {
+        // Walk up to find the PAGE ancestor and switch to it if needed
+        var ancestor = target;
+        while (ancestor && ancestor.type !== 'PAGE') ancestor = ancestor.parent;
+        if (ancestor && ancestor.type === 'PAGE' && ancestor !== figma.currentPage) {
+          figma.currentPage = ancestor;
+        }
         figma.currentPage.selection = [target];
         figma.viewport.scrollAndZoomIntoView([target]);
       }
