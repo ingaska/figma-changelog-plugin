@@ -127,8 +127,13 @@ function getFirstHyperlink(textNode) {
 function getUrl(node, layerName) {
   const found = descendantByName(node, layerName);
   if (!found || found.type !== 'TEXT') return '';
+  // 1. Try Figma hyperlink property (set via Figma's "Add link" feature)
   var h = getFirstHyperlink(found);
-  return h ? (hyperlinkToUrl(h) || '') : '';
+  if (h) return hyperlinkToUrl(h) || '';
+  // 2. Fallback: text content itself is a URL (designer typed it directly)
+  var text = (found.characters || '').trim();
+  if (/^https?:\/\//.test(text)) return text;
+  return '';
 }
 
 // Return the Figma node ID from a NODE-type hyperlink on a text layer.
