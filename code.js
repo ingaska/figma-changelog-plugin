@@ -188,7 +188,7 @@ function getDescriptionHtml(node, layerName) {
     }
     if (seg.nodeId) {
       // NODE link without fileKey: navigate within Figma when clicked
-      return '<a href="#" class="node-link" data-node-id="' + esc(seg.nodeId) + '">' + inner + '</a>';
+      return '<a class="node-link" data-node-id="' + esc(seg.nodeId) + '">' + inner + '</a>';
     }
     return linkify(seg.text);
   }).join('');
@@ -273,7 +273,7 @@ function taskToHtml(task) {
   const figmaLink = task.figmaUrl
     ? `<a href="${esc(task.figmaUrl)}" target="_blank">🧩 Figma</a>`
     : task.figmaNodeId
-      ? `<a href="#" class="node-link" data-node-id="${esc(task.figmaNodeId)}">🧩 Figma</a>`
+      ? `<a class="node-link" data-node-id="${esc(task.figmaNodeId)}">🧩 Figma</a>`
       : `<span>🧩 Figma</span>`;
 
   const descHtml = task.descriptionHtml || linkify(task.description);
