@@ -202,33 +202,47 @@ function getDescriptionHtml(node, layerName) {
 // TASK EXTRACTION
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// Plain-text version of a description: hyperlinked spans become "text (URL)".
+// Plain-text version of description for Slack: mirrors getDescriptionHtml logic exactly.
+// Hyperlinked spans become "text (URL)" so Slack auto-links them.
 function getDescriptionText(node, layerName) {
   const found = descendantByName(node, layerName);
   if (!found || found.type !== 'TEXT') return '';
   const chars = found.characters || '';
-  if (!chars) return chars;
+  if (!chars) return '';
+
+  // Build segments the same way getDescriptionHtml does
   const segments = [];
   var i = 0;
   while (i < chars.length) {
-    var h = null;
-    try { h = found.getRangeHyperlink(i, i + 1); if (h && !h.type) h = null; } catch (_) {}
+    var currentUrl = null;
+    var currentNodeId = '';
+    try {
+      var h = found.getRangeHyperlink(i, i + 1);
+      currentUrl    = hyperlinkToUrl(h);
+      currentNodeId = currentUrl ? '' : hyperlinkNodeId(h);
+    } catch (_) {}
+
     var j = i + 1;
     while (j < chars.length) {
-      var hn = null;
-      try { hn = found.getRangeHyperlink(j, j + 1); if (hn && !hn.type) hn = null; } catch (_) {}
-      if ((h && hn && h.type === hn.type && h.value === hn.value) ||
-          (!h && !hn)) { j++; } else { break; }
+      var nextUrl = null;
+      var nextNodeId = '';
+      try {
+        var hj = found.getRangeHyperlink(j, j + 1);
+        nextUrl    = hyperlinkToUrl(hj);
+        nextNodeId = nextUrl ? '' : hyperlinkNodeId(hj);
+      } catch (_) {}
+      if (nextUrl !== currentUrl || nextNodeId !== currentNodeId) break;
+      j++;
     }
-    segments.push({ text: chars.slice(i, j), h });
+
+    segments.push({ text: chars.slice(i, j), url: currentUrl, nodeId: currentNodeId });
     i = j;
   }
+
   return segments.map(function(seg) {
-    if (!seg.h) return seg.text;
-    var url = hyperlinkToUrl(seg.h);
-    if (url) return seg.text + ' (' + url + ')';
-    var nodeId = hyperlinkNodeId(seg.h);
-    return nodeId ? seg.text + ' [figma node: ' + nodeId + ']' : seg.text;
+    if (seg.url)    return seg.text + ' (' + seg.url + ')';
+    if (seg.nodeId) return seg.text + ' (figma:' + seg.nodeId + ')';
+    return seg.text;
   }).join('');
 }
 
@@ -295,10 +309,12 @@ function linkify(s) {
   return escaped.replace(/\n/g, '<br>');
 }
 
+function cleanUrl(url) { return (url || '').replace(/\s+/g, '').trim(); }
+
 function taskToText(task) {
   const desc  = (task.descriptionText || task.description || '').trim();
-  const jira  = task.jiraUrl  ? `🗂️ JIRA: ${task.jiraUrl.trim()}`   : '🗂️ JIRA';
-  const figma = task.figmaUrl ? `🧩 Figma: ${task.figmaUrl.trim()}` : '🧩 Figma';
+  const jira  = task.jiraUrl  ? `🗂️ JIRA: ${cleanUrl(task.jiraUrl)}`   : '🗂️ JIRA';
+  const figma = task.figmaUrl ? `🧩 Figma: ${cleanUrl(task.figmaUrl)}` : '🧩 Figma';
   return `${task.title}\n${desc}\n${jira}   ${figma}`;
 }
 
