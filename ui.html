@@ -172,12 +172,22 @@
       parent.postMessage({ pluginMessage: { type: 'generate', library: libraryEl.value } }, '*');
     });
 
-    // NODE-type internal links: navigate within Figma instead of opening a browser tab
+    // All links in the preview must be handled explicitly —
+    // Figma's sandboxed iframe blocks target="_blank" navigation.
     preview.addEventListener('click', (e) => {
-      const link = e.target.closest('.node-link');
-      if (!link) return;
-      e.preventDefault();
-      parent.postMessage({ pluginMessage: { type: 'goto-node', nodeId: link.dataset.nodeId } }, '*');
+      // NODE-type internal link → navigate within Figma
+      const nodeLink = e.target.closest('.node-link');
+      if (nodeLink) {
+        e.preventDefault();
+        parent.postMessage({ pluginMessage: { type: 'goto-node', nodeId: nodeLink.dataset.nodeId } }, '*');
+        return;
+      }
+      // External URL link → open via figma.openExternal()
+      const extLink = e.target.closest('a[href]');
+      if (extLink && extLink.href) {
+        e.preventDefault();
+        parent.postMessage({ pluginMessage: { type: 'open-url', url: extLink.href } }, '*');
+      }
     });
 
     copyBtn.addEventListener('click', () => {

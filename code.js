@@ -32,6 +32,9 @@ figma.ui.onmessage = (msg) => {
       }
     } catch (_) {}
 
+  } else if (msg.type === 'open-url') {
+    try { figma.openExternal(msg.url); } catch (_) {}
+
   } else if (msg.type === 'close') {
     figma.closePlugin();
   }
