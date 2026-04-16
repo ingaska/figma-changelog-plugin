@@ -106,21 +106,29 @@ function hyperlinkNodeId(h) {
   return (h && h.type === 'NODE') ? (h.value || '') : '';
 }
 
+// Return the first real HyperlinkTarget found on a text node.
+// Scans character-by-character so a non-linked leading/trailing character
+// (which makes getRangeHyperlink return figma.mixed) never hides the link.
+function getFirstHyperlink(textNode) {
+  try {
+    var h = textNode.hyperlink;
+    if (h && h.type) return h;          // uniform hyperlink on all chars
+  } catch (_) {}
+  var len = (textNode.characters || '').length;
+  for (var i = 0; i < len; i++) {
+    try {
+      var h = textNode.getRangeHyperlink(i, i + 1);
+      if (h && h.type) return h;        // found a hyperlinked char
+    } catch (_) {}
+  }
+  return null;
+}
+
 function getUrl(node, layerName) {
   const found = descendantByName(node, layerName);
   if (!found || found.type !== 'TEXT') return '';
-  try {
-    const url = hyperlinkToUrl(found.hyperlink);
-    if (url) return url;
-  } catch (_) {}
-  try {
-    const len = (found.characters || '').length;
-    if (len > 0) {
-      const url = hyperlinkToUrl(found.getRangeHyperlink(0, len));
-      if (url) return url;
-    }
-  } catch (_) {}
-  return '';
+  var h = getFirstHyperlink(found);
+  return h ? (hyperlinkToUrl(h) || '') : '';
 }
 
 // Return the Figma node ID from a NODE-type hyperlink on a text layer.
@@ -128,18 +136,8 @@ function getUrl(node, layerName) {
 function getNodeId(node, layerName) {
   const found = descendantByName(node, layerName);
   if (!found || found.type !== 'TEXT') return '';
-  try {
-    const id = hyperlinkNodeId(found.hyperlink);
-    if (id) return id;
-  } catch (_) {}
-  try {
-    const len = (found.characters || '').length;
-    if (len > 0) {
-      const id = hyperlinkNodeId(found.getRangeHyperlink(0, len));
-      if (id) return id;
-    }
-  } catch (_) {}
-  return '';
+  var h = getFirstHyperlink(found);
+  return h ? (hyperlinkNodeId(h) || '') : '';
 }
 
 // Walk a TEXT node character-by-character and return an HTML string where
