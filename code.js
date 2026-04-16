@@ -108,20 +108,32 @@ function hyperlinkNodeId(h) {
   return (h && h.type === 'NODE') ? (h.value || '') : '';
 }
 
+// Return the first HyperlinkTarget found on a text node, scanning
+// char-by-char so a non-linked space never causes figma.mixed to hide the link.
+function getFirstHyperlink(textNode) {
+  try {
+    var h = textNode.hyperlink;
+    if (h && h.type) return h;
+  } catch (_) {}
+  var len = (textNode.characters || '').length;
+  for (var i = 0; i < len; i++) {
+    try {
+      var h = textNode.getRangeHyperlink(i, i + 1);
+      if (h && h.type) return h;
+    } catch (_) {}
+  }
+  return null;
+}
+
 function getUrl(node, layerName) {
   const found = descendantByName(node, layerName);
   if (!found || found.type !== 'TEXT') return '';
-  try {
-    const url = hyperlinkToUrl(found.hyperlink);
-    if (url) return url;
-  } catch (_) {}
-  try {
-    const len = (found.characters || '').length;
-    if (len > 0) {
-      const url = hyperlinkToUrl(found.getRangeHyperlink(0, len));
-      if (url) return url;
-    }
-  } catch (_) {}
+  // 1. Figma hyperlink (set via "Add link" on the text layer)
+  var h = getFirstHyperlink(found);
+  if (h) return hyperlinkToUrl(h) || '';
+  // 2. Text content is itself a URL (designer typed it directly)
+  var text = (found.characters || '').trim();
+  if (/^https?:\/\//.test(text)) return text;
   return '';
 }
 
@@ -130,18 +142,8 @@ function getUrl(node, layerName) {
 function getNodeId(node, layerName) {
   const found = descendantByName(node, layerName);
   if (!found || found.type !== 'TEXT') return '';
-  try {
-    const id = hyperlinkNodeId(found.hyperlink);
-    if (id) return id;
-  } catch (_) {}
-  try {
-    const len = (found.characters || '').length;
-    if (len > 0) {
-      const id = hyperlinkNodeId(found.getRangeHyperlink(0, len));
-      if (id) return id;
-    }
-  } catch (_) {}
-  return '';
+  var h = getFirstHyperlink(found);
+  return h ? (hyperlinkNodeId(h) || '') : '';
 }
 
 // Walk a TEXT node character-by-character and return an HTML string where
@@ -200,18 +202,49 @@ function getDescriptionHtml(node, layerName) {
 // TASK EXTRACTION
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// Plain-text version of a description: hyperlinked spans become "text (URL)".
+function getDescriptionText(node, layerName) {
+  const found = descendantByName(node, layerName);
+  if (!found || found.type !== 'TEXT') return '';
+  const chars = found.characters || '';
+  if (!chars) return chars;
+  const segments = [];
+  var i = 0;
+  while (i < chars.length) {
+    var h = null;
+    try { h = found.getRangeHyperlink(i, i + 1); if (h && !h.type) h = null; } catch (_) {}
+    var j = i + 1;
+    while (j < chars.length) {
+      var hn = null;
+      try { hn = found.getRangeHyperlink(j, j + 1); if (hn && !hn.type) hn = null; } catch (_) {}
+      if ((h && hn && h.type === hn.type && h.value === hn.value) ||
+          (!h && !hn)) { j++; } else { break; }
+    }
+    segments.push({ text: chars.slice(i, j), h });
+    i = j;
+  }
+  return segments.map(function(seg) {
+    if (!seg.h) return seg.text;
+    var url = hyperlinkToUrl(seg.h);
+    if (url) return seg.text + ' (' + url + ')';
+    var nodeId = hyperlinkNodeId(seg.h);
+    return nodeId ? seg.text + ' [figma node: ' + nodeId + ']' : seg.text;
+  }).join('');
+}
+
 function extractTasks(sectionFrame) {
   const tasks = [];
   for (const node of findTaskNodes(sectionFrame)) {
     const title           = getText(node, 'Task Name');
     const description     = getText(node, 'Description');
+    const descriptionText = getDescriptionText(node, 'Description');
     const descriptionHtml = getDescriptionHtml(node, 'Description');
     const jiraUrl         = getUrl(node, 'JiraLink');
     const figmaUrl        = getUrl(node, 'FigmaLink');
     // figmaNodeId: node ID for internal NODE links when figma.fileKey is unavailable
     const figmaNodeId     = figmaUrl ? '' : getNodeId(node, 'FigmaLink');
     if (!title) continue;
-    tasks.push({ title, description, descriptionHtml, jiraUrl, figmaUrl, figmaNodeId });
+    tasks.push({ title, description, descriptionText, descriptionHtml, jiraUrl, figmaUrl, figmaNodeId });
   }
   return tasks;
 }
@@ -263,7 +296,10 @@ function linkify(s) {
 }
 
 function taskToText(task) {
-  return `${task.title}\n${task.description}\n🗂️ JIRA   🧩 Figma`;
+  const desc  = (task.descriptionText || task.description || '').trim();
+  const jira  = task.jiraUrl  ? `🗂️ JIRA: ${task.jiraUrl.trim()}`   : '🗂️ JIRA';
+  const figma = task.figmaUrl ? `🧩 Figma: ${task.figmaUrl.trim()}` : '🧩 Figma';
+  return `${task.title}\n${desc}\n${jira}   ${figma}`;
 }
 
 function taskToHtml(task) {
