@@ -94,8 +94,7 @@ function hyperlinkToUrl(h) {
     if (!fileKey) return null;
     // Plugin API uses "142:75"; Figma URLs use "142-75"
     var nodeId = (h.value || '').replace(/:/g, '-');
-    return 'https://www.figma.com/design/' + fileKey + '/' +
-           encodeURIComponent(figma.root.name) + '?node-id=' + nodeId;
+    return 'https://www.figma.com/design/' + fileKey + '?node-id=' + nodeId;
   }
   return null;
 }
